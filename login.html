@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+    <h2>Client App</h2>
+    <p>{{.ClientId}}</p>
+    <h2>Requested Permissions</h2>
+    <p>{{.Scope}}</p>
+    <hr>
+    <div align="center">
+        <table border="0">
+            <form action="list.html" method="get">
+                <tr>
+                    <th>
+                        ユーザID
+                    </th>
+                    <td>
+                        <input type="text" name="user_id" value="" size="24">
+                    </td>
+                </tr>
+                <tr>
+                    <th>
+                        パスワード
+                    </th>
+                    <td>
+                        <input type="password" name="password" value="" size="24">
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2">
+                        <input type="submit" value="ログイン">
+                    </td>
+                </tr>
+            </form>
+        </table>
+    </div>
+</body>
+</html>
