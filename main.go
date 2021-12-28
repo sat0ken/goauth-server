@@ -4,6 +4,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"time"
 )
 
 const (
@@ -32,9 +33,18 @@ type Session struct {
 	redirectUri string
 }
 
+type AuthCodeData struct {
+	user         string
+	clientId     string
+	scopes       string
+	redirect_uri string
+	expires_at   int64
+}
+
 var templates = make(map[string]*template.Template)
 
 var SessionInfo []Session
+var AuthCodeStore []AuthCodeData
 
 // クライアント情報をハードコード
 var clientInfo = Client{
@@ -90,6 +100,29 @@ func auth(w http.ResponseWriter, req *http.Request) {
 	}); err != nil {
 		log.Println(err)
 	}
+	log.Println("return login page...")
+	return
+}
+
+// loginボタンを押したときに受ける処理
+func authOK(w http.ResponseWriter, req *http.Request) {
+
+	loginUser := req.FormValue("username")
+	password := req.FormValue("password")
+
+	if loginUser != user.name || password != user.password {
+		w.Write([]byte("login failed"))
+	} else {
+		authData := AuthCodeData{
+			user:         "",
+			clientId:     "",
+			scopes:       "",
+			redirect_uri: "",
+			expires_at:   time.Now().Unix() + 300,
+		}
+		AuthCodeStore = append(AuthCodeStore, authData)
+	}
+
 }
 
 // トークンを発行するエンドポイント
@@ -106,8 +139,9 @@ func main() {
 	}
 	log.Println("start oauth server on localhost:8080...")
 	http.HandleFunc("/auth", auth)
+	http.HandleFunc("/authok", authOK)
 	http.HandleFunc("/token", token)
-	err = http.ListenAndServe(":8081", nil)
+	err = http.ListenAndServe(":8080", nil)
 	if err != nil {
 		log.Fatal(err)
 	}
