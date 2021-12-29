@@ -135,6 +135,13 @@ func token(w http.ResponseWriter, req *http.Request) {
 		w.Write([]byte(fmt.Sprintf("invalid_request. client_id not match.\n")))
 	}
 
+	// 認可コードの有効期限を確認
+	if v.expires_at < time.Now().Unix() {
+		log.Println("authcode expire")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(fmt.Sprintf("invalid_request. auth code time limit is expire.\n")))
+	}
+
 	// clientシークレットの確認
 	if clientInfo.secret != query.Get("client_secret") {
 		log.Println("client_secret is not match.")
@@ -178,7 +185,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Println("start oauth server on localhost:8080...")
+	log.Println("start oauth server on localhost:8081...")
 	http.HandleFunc("/auth", auth)
 	http.HandleFunc("/authcheck", authCheck)
 	http.HandleFunc("/token", token)
