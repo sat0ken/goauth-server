@@ -23,10 +23,12 @@ type User struct {
 }
 
 type Session struct {
-	client      string
-	state       string
-	scopes      string
-	redirectUri string
+	client                string
+	state                 string
+	scopes                string
+	redirectUri           string
+	code_challenge        string
+	code_challenge_method string
 }
 
 type AuthCode struct {
@@ -59,7 +61,7 @@ var TokenCodeList = make(map[string]TokenCode)
 var clientInfo = Client{
 	id:          "1234",
 	name:        "test",
-	redirectURL: "http://127.0.0.1:8080/callback",
+	redirectURL: "http://localhost:8080/callback",
 	secret:      "secret",
 }
 

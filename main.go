@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
@@ -9,6 +11,12 @@ import (
 	"net/http"
 	"time"
 )
+
+// https://auth0.com/docs/authorization/flows/call-your-api-using-the-authorization-code-flow-with-pkce#javascript-sample
+func base64URLEncode(verifier string) string {
+	hash := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(hash[:])
+}
 
 // 3.1.  認可エンドポイント
 func auth(w http.ResponseWriter, req *http.Request) {
@@ -29,22 +37,25 @@ func auth(w http.ResponseWriter, req *http.Request) {
 		w.Write([]byte("client_id is not match"))
 		return
 	}
-	// レスポンスタイプはいったん認可コードだけにしておく
+	// レスポンスタイプはいったん認可コードだけをサポート
 	if "code" != query.Get("response_type") {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("only support code"))
 		return
 	}
 	sessionId := uuid.New().String()
-	// セッション情報を保存しておく
+	// セッションを保存しておく
 	session := Session{
-		client:      query.Get("client_id"),
-		state:       query.Get("state"),
-		scopes:      query.Get("scope"),
-		redirectUri: query.Get("redirect_uri"),
+		client:                query.Get("client_id"),
+		state:                 query.Get("state"),
+		scopes:                query.Get("scope"),
+		redirectUri:           query.Get("redirect_uri"),
+		code_challenge:        query.Get("code_challenge"),
+		code_challenge_method: query.Get("code_challenge_method"),
 	}
 	sessionList[sessionId] = session
 
+	// CookieにセッションIDをセット
 	cookie := &http.Cookie{
 		Name:  "session",
 		Value: sessionId,
@@ -76,6 +87,7 @@ func authCheck(w http.ResponseWriter, req *http.Request) {
 	} else {
 
 		cookie, _ := req.Cookie("session")
+		http.SetCookie(w, cookie)
 		v, _ := sessionList[cookie.Value]
 
 		authCodeString := uuid.New().String()
@@ -89,8 +101,9 @@ func authCheck(w http.ResponseWriter, req *http.Request) {
 		// 認可コードを保存
 		AuthCodeList[authCodeString] = authData
 
+		log.Printf("auth code accepet : %s\n", authData)
+
 		location := fmt.Sprintf("%s?code=%s&state=%s", v.redirectUri, authCodeString, v.state)
-		log.Printf("location url : %s", location)
 		w.Header().Add("Location", location)
 		w.WriteHeader(302)
 
@@ -100,8 +113,11 @@ func authCheck(w http.ResponseWriter, req *http.Request) {
 
 // トークンを発行するエンドポイント
 func token(w http.ResponseWriter, req *http.Request) {
+
+	cookie, _ := req.Cookie("session")
 	req.ParseForm()
 	query := req.Form
+
 	requiredParameter := []string{"grant_type", "code", "client_id", "redirect_uri"}
 	// 必須パラメータのチェック
 	for _, v := range requiredParameter {
@@ -121,7 +137,6 @@ func token(w http.ResponseWriter, req *http.Request) {
 
 	// 保存していた認可コードのデータを取得。なければエラーを返す
 	v, ok := AuthCodeList[query.Get("code")]
-	//log.Printf("authcode is %s\n", ok)
 	if !ok {
 		log.Println("auth code isn't exist")
 		w.WriteHeader(http.StatusBadRequest)
@@ -149,8 +164,18 @@ func token(w http.ResponseWriter, req *http.Request) {
 		w.Write([]byte(fmt.Sprintf("invalid_request. client_secret is not match.\n")))
 	}
 
+	// PKCEのチェック
+	// clientから送られてきたverifyをsh256で計算&base64urlエンコードしてから
+	// 認可リクエスト時に送られてきてセッションに保存しておいたchallengeと一致するか確認
+	session := sessionList[cookie.Value]
+	if session.code_challenge != base64URLEncode(query.Get("code_verifier")) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("PKCE check is err..."))
+	}
+
 	tokenString := uuid.New().String()
 	expireTime := time.Now().Unix() + ACCESS_TOKEN_DURATION
+
 	tokenInfo := TokenCode{
 		user:       v.user,
 		clientId:   v.clientId,
