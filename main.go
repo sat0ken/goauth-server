@@ -20,7 +20,15 @@ func base64URLEncode(verifier string) string {
 
 // 3.1.  認可エンドポイント
 func auth(w http.ResponseWriter, req *http.Request) {
+
 	query := req.URL.Query()
+	session := Session{
+		client:      query.Get("client_id"),
+		state:       query.Get("state"),
+		scopes:      query.Get("scope"),
+		redirectUri: query.Get("redirect_uri"),
+	}
+
 	requiredParameter := []string{"response_type", "client_id", "redirect_uri"}
 	// 必須パラメータのチェック
 	for _, v := range requiredParameter {
@@ -43,16 +51,19 @@ func auth(w http.ResponseWriter, req *http.Request) {
 		w.Write([]byte("only support code"))
 		return
 	}
-	sessionId := uuid.New().String()
-	// セッションを保存しておく
-	session := Session{
-		client:                query.Get("client_id"),
-		state:                 query.Get("state"),
-		scopes:                query.Get("scope"),
-		redirectUri:           query.Get("redirect_uri"),
-		code_challenge:        query.Get("code_challenge"),
-		code_challenge_method: query.Get("code_challenge_method"),
+
+	// scopeの確認、OAuthかOIDCか
+	// 組み合わせへの対応は面倒なので "openid profile" で固定
+	if "openid profile" == query.Get("scope") {
+		session.oidc = true
+	} else {
+		session.code_challenge = query.Get("code_challenge")
+		session.code_challenge_method = query.Get("code_challenge_method")
 	}
+
+	// セッションIDを生成
+	sessionId := uuid.New().String()
+	// セッション情報を保存しておく
 	sessionList[sessionId] = session
 
 	// CookieにセッションIDをセット
@@ -175,7 +186,7 @@ func token(w http.ResponseWriter, req *http.Request) {
 	// clientから送られてきたverifyをsh256で計算&base64urlエンコードしてから
 	// 認可リクエスト時に送られてきてセッションに保存しておいたchallengeと一致するか確認
 	session := sessionList[cookie.Value]
-	if session.code_challenge != base64URLEncode(query.Get("code_verifier")) {
+	if session.oidc == false && session.code_challenge != base64URLEncode(query.Get("code_verifier")) {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("PKCE check is err..."))
 	}
@@ -198,6 +209,9 @@ func token(w http.ResponseWriter, req *http.Request) {
 		TokenType:   "Bearer",
 		ExpiresIn:   expireTime,
 	}
+	if session.oidc {
+		tokenResp.IdToken, _ = signJwt()
+	}
 	resp, err := json.Marshal(tokenResp)
 	if err != nil {
 		log.Println("json marshal err")
@@ -210,8 +224,26 @@ func token(w http.ResponseWriter, req *http.Request) {
 
 }
 
+func certs(w http.ResponseWriter, req *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	w.Write(makeJWK())
+}
+
+func userinfo(w http.ResponseWriter, req *http.Request) {
+	var m = map[string]interface{}{
+		"sub":         user.sub,
+		"name":        user.name_ja,
+		"given_name":  user.given_name,
+		"family_name": user.family_name,
+		"locale":      user.locale,
+	}
+	buf, _ := json.MarshalIndent(m, "", "  ")
+	w.WriteHeader(http.StatusOK)
+	w.Write(buf)
+}
+
 // http://openid-foundation-japan.github.io/rfc6749.ja.html
-func main() {
+func server() {
 	var err error
 	templates["login"], err = template.ParseFiles("login.html")
 	if err != nil {
@@ -221,9 +253,17 @@ func main() {
 	http.HandleFunc("/auth", auth)
 	http.HandleFunc("/authcheck", authCheck)
 	http.HandleFunc("/token", token)
+	http.HandleFunc("/certs", certs)
+	http.HandleFunc("/userinfo", userinfo)
 	err = http.ListenAndServe("localhost:8081", nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 
+}
+
+func main() {
+	server()
+	//signJwt()
+	//makeJWK()
 }
