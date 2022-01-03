@@ -95,7 +95,7 @@ func authCheck(w http.ResponseWriter, req *http.Request) {
 			user:         loginUser,
 			clientId:     v.client,
 			scopes:       v.scopes,
-			redirect_uri: authCodeString,
+			redirect_uri: v.redirectUri,
 			expires_at:   time.Now().Unix() + 300,
 		}
 		// 認可コードを保存
@@ -148,6 +148,13 @@ func token(w http.ResponseWriter, req *http.Request) {
 		log.Println("client_id not match")
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(fmt.Sprintf("invalid_request. client_id not match.\n")))
+	}
+
+	// 認可リクエスト時のリダイレクトURIと比較
+	if v.redirect_uri != query.Get("redirect_uri") {
+		log.Println("redirect_uri not match")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(fmt.Sprintf("invalid_request. redirect_uri not match.\n")))
 	}
 
 	// 認可コードの有効期限を確認
