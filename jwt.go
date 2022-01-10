@@ -17,7 +17,7 @@ import (
 )
 
 func readPrivateKey() (*rsa.PrivateKey, error) {
-	data, err := ioutil.ReadFile("private.pem")
+	data, err := ioutil.ReadFile("private-key.pem")
 	if err != nil {
 		return nil, err
 	}
@@ -49,8 +49,7 @@ func makeHeaderPayload() string {
 		FamilyName: user.family_name,
 		Locale:     user.locale,
 		Iat:        time.Now().Unix(),
-		Exp:        1646319345,
-		//Exp:        time.Now().Unix() + ACCESS_TOKEN_DURATION,
+		Exp:        time.Now().Unix() + ACCESS_TOKEN_DURATION,
 	}
 	payload_json, _ := json.Marshal(payload)
 	b64header := base64.RawURLEncoding.EncodeToString(header)
@@ -59,7 +58,7 @@ func makeHeaderPayload() string {
 	return fmt.Sprintf("%s.%s", b64header, b64payload)
 }
 
-func signJwt() (string, error) {
+func makeJWT() (string, error) {
 	jwtString := makeHeaderPayload()
 
 	privateKey, err := readPrivateKey()
@@ -74,23 +73,23 @@ func signJwt() (string, error) {
 	hasher.Write([]byte(jwtString))
 	tokenHash := hasher.Sum(nil)
 
-	signature, err := rsa.SignPSS(rand.Reader, privateKey, crypto.SHA256, tokenHash, nil)
+	signature, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, tokenHash)
 	if err != nil {
 		return "", fmt.Errorf("sign by private key is err : %s", err)
 	}
 	enc := base64.RawURLEncoding.EncodeToString(signature)
+	//fmt.Printf("%s.%s", jwtString, enc)
 	return fmt.Sprintf("%s.%s", jwtString, enc), nil
 }
 
 func makeJWK() []byte {
 
-	data, _ := ioutil.ReadFile("public.pem")
+	data, _ := ioutil.ReadFile("public-key.pem")
 	keyset, _ := jwk.ParseKey(data, jwk.WithPEM(true))
 
 	keyset.Set(jwk.KeyIDKey, "12345678")
 	keyset.Set(jwk.AlgorithmKey, "RS256")
 	keyset.Set(jwk.KeyUsageKey, "sig")
-	//buf, _ := json.Marshal(keyset)
 
 	jwk := map[string]interface{}{
 		"keys": []interface{}{keyset},

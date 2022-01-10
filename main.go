@@ -9,6 +9,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -128,6 +129,7 @@ func token(w http.ResponseWriter, req *http.Request) {
 	cookie, _ := req.Cookie("session")
 	req.ParseForm()
 	query := req.Form
+	session := sessionList[cookie.Value]
 
 	requiredParameter := []string{"grant_type", "code", "client_id", "redirect_uri"}
 	// 必須パラメータのチェック
@@ -144,6 +146,7 @@ func token(w http.ResponseWriter, req *http.Request) {
 	if "authorization_code" != query.Get("grant_type") {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(fmt.Sprintf("invalid_request. not support type.\n")))
+		return
 	}
 
 	// 保存していた認可コードのデータを取得。なければエラーを返す
@@ -152,6 +155,7 @@ func token(w http.ResponseWriter, req *http.Request) {
 		log.Println("auth code isn't exist")
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(fmt.Sprintf("no authrization code")))
+		return
 	}
 
 	// 認可リクエスト時のクライアントIDと比較
@@ -159,6 +163,7 @@ func token(w http.ResponseWriter, req *http.Request) {
 		log.Println("client_id not match")
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(fmt.Sprintf("invalid_request. client_id not match.\n")))
+		return
 	}
 
 	// 認可リクエスト時のリダイレクトURIと比較
@@ -166,6 +171,7 @@ func token(w http.ResponseWriter, req *http.Request) {
 		log.Println("redirect_uri not match")
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(fmt.Sprintf("invalid_request. redirect_uri not match.\n")))
+		return
 	}
 
 	// 認可コードの有効期限を確認
@@ -173,6 +179,7 @@ func token(w http.ResponseWriter, req *http.Request) {
 		log.Println("authcode expire")
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(fmt.Sprintf("invalid_request. auth code time limit is expire.\n")))
+		return
 	}
 
 	// clientシークレットの確認
@@ -180,15 +187,16 @@ func token(w http.ResponseWriter, req *http.Request) {
 		log.Println("client_secret is not match.")
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(fmt.Sprintf("invalid_request. client_secret is not match.\n")))
+		return
 	}
 
 	// PKCEのチェック
 	// clientから送られてきたverifyをsh256で計算&base64urlエンコードしてから
 	// 認可リクエスト時に送られてきてセッションに保存しておいたchallengeと一致するか確認
-	session := sessionList[cookie.Value]
 	if session.oidc == false && session.code_challenge != base64URLEncode(query.Get("code_verifier")) {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("PKCE check is err..."))
+		return
 	}
 
 	tokenString := uuid.New().String()
@@ -200,6 +208,7 @@ func token(w http.ResponseWriter, req *http.Request) {
 		scopes:     v.scopes,
 		expires_at: expireTime,
 	}
+	// 払い出したトークン情報を保存
 	TokenCodeList[tokenString] = tokenInfo
 	// 認可コードを削除
 	delete(AuthCodeList, query.Get("code"))
@@ -210,7 +219,7 @@ func token(w http.ResponseWriter, req *http.Request) {
 		ExpiresIn:   expireTime,
 	}
 	if session.oidc {
-		tokenResp.IdToken, _ = signJwt()
+		tokenResp.IdToken, _ = makeJWT()
 	}
 	resp, err := json.Marshal(tokenResp)
 	if err != nil {
@@ -230,6 +239,28 @@ func certs(w http.ResponseWriter, req *http.Request) {
 }
 
 func userinfo(w http.ResponseWriter, req *http.Request) {
+	h := req.Header.Get("Authorization")
+	tmp := strings.Split(h, " ")
+
+	v, ok := TokenCodeList[tmp[1]]
+	if !ok {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(fmt.Sprintf("token is wrong.\n")))
+		return
+	}
+
+	if v.expires_at < time.Now().Unix() {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(fmt.Sprintf("token is expire.\n")))
+		return
+	}
+
+	if v.scopes != "openid profile" {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(fmt.Sprintf("scope is not permit.\n")))
+		return
+	}
+
 	var m = map[string]interface{}{
 		"sub":         user.sub,
 		"name":        user.name_ja,
@@ -243,7 +274,7 @@ func userinfo(w http.ResponseWriter, req *http.Request) {
 }
 
 // http://openid-foundation-japan.github.io/rfc6749.ja.html
-func server() {
+func main() {
 	var err error
 	templates["login"], err = template.ParseFiles("login.html")
 	if err != nil {
@@ -260,10 +291,4 @@ func server() {
 		log.Fatal(err)
 	}
 
-}
-
-func main() {
-	server()
-	//signJwt()
-	//makeJWK()
 }
