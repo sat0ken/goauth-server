@@ -17,9 +17,14 @@ type Client struct {
 }
 
 type User struct {
-	id       int
-	name     string
-	password string
+	id          int
+	name        string
+	password    string
+	sub         string
+	name_ja     string
+	given_name  string
+	family_name string
+	locale      string
 }
 
 type Session struct {
@@ -29,6 +34,10 @@ type Session struct {
 	redirectUri           string
 	code_challenge        string
 	code_challenge_method string
+	// OIDC用
+	nonce string
+	// IDトークンを払い出すか否か、trueならIDトークンもfalseならOAuthでトークンだけ払い出す
+	oidc bool
 }
 
 type AuthCode struct {
@@ -50,6 +59,31 @@ type TokenResponse struct {
 	AccessToken string `json:"access_token"`
 	TokenType   string `json:"token_type"`
 	ExpiresIn   int64  `json:"expires_in"`
+	IdToken     string `json:"id_token,omitempty"`
+}
+
+type Payload struct {
+	Iss        string `json:"iss"`
+	Azp        string `json:"azp"`
+	Aud        string `json:"aud"`
+	Sub        string `json:"sub"`
+	AtHash     string `json:"at_hash"`
+	Nonce      string `json:"nonce"`
+	Name       string `json:"name"`
+	GivenName  string `json:"given_name"`
+	FamilyName string `json:"family_name"`
+	Locale     string `json:"locale"`
+	Iat        int64  `json:"iat"`
+	Exp        int64  `json:"exp"`
+}
+
+type jwkKey struct {
+	Kid string `json:"kid"`
+	N   string `json:"n"`
+	Alg string `json:"alg"`
+	Kty string `json:"kty"`
+	E   string `json:"e"`
+	Use string `json:"use"`
 }
 
 var templates = make(map[string]*template.Template)
@@ -67,7 +101,12 @@ var clientInfo = Client{
 
 // 登録ユーザをハードコード
 var user = User{
-	id:       1111,
-	name:     "hoge",
-	password: "password",
+	id:          1111,
+	name:        "hoge",
+	password:    "password",
+	sub:         "11111111",
+	name_ja:     "徳川慶喜",
+	given_name:  "慶喜",
+	family_name: "徳川",
+	locale:      "ja",
 }
