@@ -16,6 +16,7 @@ import (
 	"github.com/lestrrat-go/jwx/jwk"
 )
 
+// 秘密鍵を読み込む
 func readPrivateKey() (*rsa.PrivateKey, error) {
 	data, err := ioutil.ReadFile("private-key.pem")
 	if err != nil {
@@ -35,8 +36,12 @@ func readPrivateKey() (*rsa.PrivateKey, error) {
 	return privateKey, nil
 }
 
+// "ヘッダー.ペイロード"を作成する
 func makeHeaderPayload() string {
+	// ヘッダー
 	var header = []byte(`{"alg":"RS256","kid": "12345678","typ":"JWT"}`)
+
+	// ペイロード
 	var payload = Payload{
 		Iss:        "https://oreore.oidc.com",
 		Azp:        clientInfo.id,
@@ -52,12 +57,15 @@ func makeHeaderPayload() string {
 		Exp:        time.Now().Unix() + ACCESS_TOKEN_DURATION,
 	}
 	payload_json, _ := json.Marshal(payload)
+
+	//base64エンコード
 	b64header := base64.RawURLEncoding.EncodeToString(header)
 	b64payload := base64.RawURLEncoding.EncodeToString(payload_json)
 
 	return fmt.Sprintf("%s.%s", b64header, b64payload)
 }
 
+// JWTを作成
 func makeJWT() (string, error) {
 	jwtString := makeHeaderPayload()
 
@@ -73,15 +81,18 @@ func makeJWT() (string, error) {
 	hasher.Write([]byte(jwtString))
 	tokenHash := hasher.Sum(nil)
 
+	// 署名を作成
 	signature, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, tokenHash)
 	if err != nil {
 		return "", fmt.Errorf("sign by private key is err : %s", err)
 	}
 	enc := base64.RawURLEncoding.EncodeToString(signature)
-	//fmt.Printf("%s.%s", jwtString, enc)
+
+	// "ヘッダー.ペイロード.署名"を作成して返す
 	return fmt.Sprintf("%s.%s", jwtString, enc), nil
 }
 
+//　JWKを作成してJSONにして返す
 func makeJWK() []byte {
 
 	data, _ := ioutil.ReadFile("public-key.pem")
